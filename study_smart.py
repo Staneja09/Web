@@ -7,13 +7,14 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 import os
 import re
-import pyrebase
+from pyrebase import initialize_app
 from datetime import datetime
 import tempfile
 from gtts import gTTS
 import PyPDF2
 from transformers import pipeline
 import tempfile
+from datetime import datetime, date
 import math
 import language_tool_python
 from tools1 import maths_tools , grade_calculator , exam_anxiety_relief
@@ -39,70 +40,83 @@ firebase_config = {
     "appId": "1:542791547116:android:2afb19a2e0ea44c4cfcdc9"
 }
 
-# initialize pyrebase
-firebase = pyrebase.initialize_app(firebase_config)
-auth_pyrebase = firebase.auth()
-db = firebase.database()
+# Initialize Firebase App
+firebase = initialize_app(firebase_config)
+
+# Access Authentication and Database
+auth_pyrebase = firebase.auth()  # Authentication service
+db = firebase.database()  
 
 
 #simple data for login/signup/todo
+firebase_config = {
+    "apiKey": "AIzaSyCz2MuoTM4oxnOTlPxuEFjgiLDe7uISzoE",
+    "authDomain": "book-recommendation-58008.firebaseapp.com",
+    "databaseURL": "https://book-recommendation-58008-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "projectId": "book-recommendation-58008",
+    "storageBucket": "book-recommendation-58008.appspot.com",
+    "messagingSenderId": "542791547116",
+    "appId": "1:542791547116:android:2afb19a2e0ea44c4cfcdc9"
+}
+
+# Initialize Firebase
+firebase = initialize_app(firebase_config)
+auth_pyrebase = firebase.auth()
+db = firebase.database()
+
+# Subject list for each class
+subjects_by_class = {
+    "Class 9": ["Math", "Science", "English"],
+    "Class 10": ["Math", "Science", "Social Studies"],
+    "Class 11": ["Physics", "Chemistry", "Biology", "Math"],
+    "Class 12": ["Physics", "Chemistry", "Biology", "Math", "English"]
+}
+
+# Login Functionality
 def login():
     st.subheader("Login")
-
-    # Email and password input fields
     email = st.text_input("Email")
     password = st.text_input("Password", type="password")
 
-    # Login button
     if st.button("Login"):
         try:
-            # Authenticate using pyrebase
             user = auth_pyrebase.sign_in_with_email_and_password(email, password)
             st.session_state.authenticated = True
             st.session_state.user_email = email
-            # Fetch user class information from the database
+            # Fetch user class from the database
             user_node = email.replace(".", "_")
             user_data = db.child("users").child(user_node).get().val()
-            if user_data and "class" in user_data:
-                st.session_state.user_class = user_data["class"]
+            st.session_state.user_class = user_data.get("class", "Unknown") if user_data else None
             st.success("Login successful!")
         except Exception as e:
             st.error(f"Error: {e}")
 
-    # Link to switch to sign-up
     if st.button("Don't have an account? Sign up now"):
         st.session_state.view = "signup"
 
+# Signup Functionality
 def signup():
     st.subheader("Sign Up")
-
-    # Registration fields
     email = st.text_input("Email (signup)")
     password = st.text_input("Password (signup)", type="password")
     user_class = st.selectbox("Select Your Class", ["Class 9", "Class 10", "Class 11", "Class 12"])
 
-    # Sign up button
     if st.button("Sign Up"):
         try:
-            # Create new user account using pyrebase
             auth_pyrebase.create_user_with_email_and_password(email, password)
-            # Save user class information in the database
             user_node = email.replace(".", "_")
             db.child("users").child(user_node).set({"class": user_class})
             st.success("Account created successfully! Please log in.")
-            # Switch to login view
             st.session_state.view = "login"
         except Exception as e:
             st.error(f"Error: {e}")
 
-    # Link to switch back to login
     if st.button("Already have an account? Login now"):
         st.session_state.view = "login"
 
+# To-Do List Functionality
 def todo_list():
     st.subheader(f"To-Do List for {st.session_state.user_email}")
-
-    # Get the user's class to show relevant subjects
     user_class = st.session_state.get("user_class", None)
     subjects = subjects_by_class.get(user_class, [])
 
@@ -110,15 +124,13 @@ def todo_list():
         st.error("No subjects found for your class.")
         return
 
-    # Input field for new to-do item
     new_todo = st.text_input("Add a new to-do")
     selected_subject = st.selectbox("Select Subject", subjects)
-    due_date = st.date_input("Select Due Date", datetime.today())
+    due_date = st.date_input("Select Due Date", date.today())
     due_time = st.time_input("Select Due Time", datetime.now().time())
 
     if st.button("Add"):
         if new_todo and selected_subject:
-            # Save the to-do item in Firebase under the user's email node
             user_node = st.session_state.user_email.replace(".", "_")
             todo_data = {
                 "task": new_todo,
@@ -129,24 +141,20 @@ def todo_list():
             db.child("todos").child(user_node).push(todo_data)
             st.success("To-Do added!")
 
-    # Fetch existing to-do items from Firebase
     user_node = st.session_state.user_email.replace(".", "_")
     todos = db.child("todos").child(user_node).get().val()
 
-    # Display the to-do items
     if todos:
         for todo_id, todo_data in todos.items():
-            task = todo_data["task"]
+            task = todo_data.get("task", "Unknown Task")
             subject = todo_data.get("subject", "N/A")
             due_date = todo_data.get("due_date", "N/A")
             due_time = todo_data.get("due_time", "N/A")
             st.write(f"**{task}** - {subject} (Due: {due_date} at {due_time})")
             if st.checkbox(f"Mark as done - {task}", key=todo_id):
-                # Delete the task when it's marked as done
                 db.child("todos").child(user_node).child(todo_id).remove()
                 st.success(f"Deleted: {task}")
 
-    # Logout button
     if st.button("Logout"):
         st.session_state.authenticated = False
         st.session_state.user_email = None
